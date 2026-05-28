@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "225329482961",
+    "project_id": "genui-task-list-app",
+    "storage_bucket": "genui-task-list-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:225329482961:android:99cb3377c7d792b31209f0",
+        "android_client_info": {
+          "package_name": "com.example.genui_task_list_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4vDMbORktrMWkQF7CuMzumdZd7w5HvX8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
