@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:genui_task_list_app/firebase_options.dart';
 import 'package:genui_task_list_app/home_page.dart';
 
+const taskDisplaySurfaceId = 'task_display';
+
 void main() async {
   // debugPrintRebuildDirtyWidgets: true;
   WidgetsFlutterBinding.ensureInitialized();

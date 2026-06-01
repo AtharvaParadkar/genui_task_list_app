@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:genui_task_list_app/main.dart';
 import 'package:genui_task_list_app/message_bubble.dart';
+import 'package:genui/genui.dart' hide TextPart;
+import 'package:genui/genui.dart' as genui;
+import 'task_display.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
@@ -17,11 +21,23 @@ class TextItem extends ConversationItem {
   TextItem({required this.text, this.isUser = false});
 }
 
+class SurfaceItem extends ConversationItem {
+  final String surfaceId;
+
+  SurfaceItem({required this.surfaceId});
+}
+
 class _MyHomePageState extends State<MyHomePage> {
   final List<ConversationItem> _items = [];
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   late final ChatSession _chatSession;
+
+  //? GenUI controllers
+  late final SurfaceController _controller;
+  late final A2uiTransportAdapter _transport;
+  late final Conversation _conversation;
+  late final Catalog catalog;
 
   @override
   void initState() {
@@ -31,7 +47,96 @@ class _MyHomePageState extends State<MyHomePage> {
       model: 'gemini-2.5-flash',
     );
     _chatSession = model.startChat();
-    _chatSession.sendMessage(Content.text(systemInstruction));
+    //* for text ui
+    // _chatSession.sendMessage(Content.text(systemInstruction));
+
+    //* Initialize the GenUI Catalog.
+    // The genui package provides a default set of primitive widgets (like text
+    // and basic buttons) out of the box using this class.
+    // catalog = BasicCatalogItems.asCatalog();
+
+    // The Catalog is immutable, so use copyWith to create a new version
+    // that includes our custom catalog item along with the basics.
+    catalog = BasicCatalogItems.asCatalog().copyWith(newItems: [taskDisplay]);
+
+    // Create a SurfaceController to manage the state of generated surfaces.
+    _controller = SurfaceController(catalogs: [catalog]);
+
+    // Create a transport adapter that will process messages to and from the
+    // agent, looking for A2UI messages.
+    _transport = A2uiTransportAdapter(onSend: _sendAndReceive);
+
+    // Link the transport and SurfaceController together in a Conversation,
+    // which provides your app a unified API for interacting with the agent.
+    _conversation = Conversation(
+      controller: _controller,
+      transport: _transport,
+    );
+
+    //* Listen to GenUI stream events to update the UI
+    _conversation.events.listen((event) {
+      setState(() {
+        switch (event) {
+          case ConversationSurfaceAdded added:
+            if (added.surfaceId != taskDisplaySurfaceId) {
+              _items.add(SurfaceItem(surfaceId: added.surfaceId));
+              _scrollToBottom();
+            }
+          case ConversationSurfaceRemoved removed:
+            _items.removeWhere(
+              (item) =>
+                  item is SurfaceItem && item.surfaceId == removed.surfaceId,
+            );
+          case ConversationContentReceived content:
+            _items.add(TextItem(text: content.text, isUser: false));
+            _scrollToBottom();
+          case ConversationError error:
+            debugPrint('GenUI Error: ${error.error}');
+          default:
+        }
+      });
+    });
+
+    // Create the system prompt for the agent, which will include this app's
+    // system instruction as well as the schema for the catalog.
+    final promptBuilder = PromptBuilder.chat(
+      catalog: catalog,
+      systemPromptFragments: [systemInstruction],
+    );
+
+    // Send the prompt into the Conversation, which will subsequently route it
+    // to Firebase using the transport mechanism.
+    _conversation.sendRequest(
+      ChatMessage.system(promptBuilder.systemPromptJoined()),
+    );
+  }
+
+  //* for GenUI
+  Future<void> _sendAndReceive(ChatMessage msg) async {
+    final buffer = StringBuffer();
+
+    // Reconstruct the message part fragments
+    for (final part in msg.parts) {
+      if (part.isUiInteractionPart) {
+        buffer.write(part.asUiInteractionPart!.interaction);
+      } else if (part is genui.TextPart) {
+        buffer.write(part.text);
+      }
+    }
+
+    if (buffer.isEmpty) {
+      return;
+    }
+
+    final text = buffer.toString();
+
+    // Send the string to Firebase AI Logic.
+    final response = await _chatSession.sendMessage(Content.text(text));
+
+    if (response.text?.isNotEmpty ?? false) {
+      // Feed the response back into GenUI's transportation layer
+      _transport.addChunk(response.text!);
+    }
   }
 
   void _scrollToBottom() {
@@ -67,14 +172,19 @@ class _MyHomePageState extends State<MyHomePage> {
 
     _scrollToBottom();
 
-    final response = await _chatSession.sendMessage(Content.text(text));
+    //* text based UI
+    // final response = await _chatSession.sendMessage(Content.text(text));
 
-    if (response.text?.isNotEmpty ?? false) {
-      setState(() {
-        _items.add(TextItem(text: response.text!, isUser: false));
-      });
-      _scrollToBottom();
-    }
+    // if (response.text?.isNotEmpty ?? false) {
+    //   setState(() {
+    //     _items.add(TextItem(text: response.text!, isUser: false));
+    //   });
+    //   _scrollToBottom();
+    // }
+
+    //* GenUI
+    // Send the user's input through GenUI instead of directly to Firebase.
+    await _conversation.sendRequest(ChatMessage.user(text));
   }
 
   @override
@@ -84,45 +194,84 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Just Today'),
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              children: [
-                for (final item in _items)
-                  switch (item) {
-                    TextItem() => MessageBubble(
-                      text: item.text,
-                      isUser: item.isUser,
-                    ),
-                  },
-              ],
-            ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      onSubmitted: (_) => _addMessage(),
-                      decoration: const InputDecoration(
-                        hintText: 'Enter a message',
-                      ),
+          Column(
+            children: [
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                child: Container(
+                  padding: const .all(16),
+                  alignment: .topLeft,
+                  child: Surface(
+                    surfaceContext: _controller.contextFor(
+                      taskDisplaySurfaceId,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: _addMessage,
-                    child: const Text('Send'),
-                  ),
-                ],
+                ),
               ),
-            ),
+              const Divider(),
+              Expanded(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    for (final item in _items)
+                      switch (item) {
+                        TextItem() => MessageBubble(
+                          text: item.text,
+                          isUser: item.isUser,
+                        ),
+                        //* GenUI!
+                        SurfaceItem() => Surface(
+                          surfaceContext: _controller.contextFor(
+                            item.surfaceId,
+                          ),
+                        ),
+                      },
+                  ],
+                ),
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: ValueListenableBuilder(
+                    valueListenable: _conversation.state,
+                    builder: (context, state, child) {
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _textController,
+                              onSubmitted: state.isWaiting
+                                  ? null
+                                  : (_) => _addMessage(),
+                              decoration: const InputDecoration(
+                                hintText: 'Enter a message',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: state.isWaiting ? null : _addMessage,
+                            child: const Text('Send'),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          ValueListenableBuilder(
+            valueListenable: _conversation.state,
+            builder: (context, state, child) {
+              if (state.isWaiting) {
+                return const LinearProgressIndicator();
+              }
+              return const SizedBox.shrink();
+            },
           ),
         ],
       ),
@@ -130,7 +279,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
-const systemInstruction = '''
+const systemInstruction =
+    '''
   ## PERSONA
   You are an expert task planner.
 
@@ -162,4 +312,14 @@ const systemInstruction = '''
   *   If I tell you a task is complete, mark it as complete.
   *   Once all tasks are complete, send a message acknowledging that, and then
     end the conversation.
+
+  ## USER INTERFACE
+    *   To display the list of tasks create one and only one instance of the
+    TaskDisplay catalog item. Use "$taskDisplaySurfaceId" as its surface ID.
+  *   Update $taskDisplaySurfaceId as necessary when the list changes.
+  *   $taskDisplaySurfaceId must include a button for each task that I can use
+    to mark it complete. When I use that button to mark a task complete, it
+    should send you a message indicating what I've done.
+  *   Avoid repeating the same information in a single message.
+  *   When responding with text, rather than A2UI messages, be brief.
 ''';
