@@ -84,36 +84,186 @@ class _TaskDisplay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final completed = data.tasks.where((t) => t.isCompleted).length;
+    final total = data.tasks.length;
+    final progress = total == 0 ? 0.0 : completed / total;
+
     return Column(
       crossAxisAlignment: .start,
       mainAxisSize: .min,
       children: [
+        // ── Header row ──────────────────────────────────────────
         Padding(
-          padding: const .all(16.0),
-          child: Text(
-            data.title,
-            style: Theme.of(context).textTheme.titleLarge,
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  data.title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: .w700,
+                  ),
+                ),
+              ),
+              // Task count badge
+              Container(
+                padding: const .symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: completed == total && total > 0
+                      ? cs.secondaryContainer
+                      : cs.primaryContainer,
+                  borderRadius: .circular(20),
+                ),
+                child: Text(
+                  '$completed / $total',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: completed == total && total > 0
+                        ? cs.onSecondaryContainer
+                        : cs.onPrimaryContainer,
+                    fontWeight: .w700,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        ...data.tasks.map(
-          (task) => CheckboxListTile(
-            title: Text(
-              task.name,
-              style: TextStyle(
-                decoration: task.isCompleted ? .lineThrough : .none,
+
+        // ── Progress bar ─────────────────────────────────────────
+        if (total > 0)
+          Padding(
+            padding: const .fromLTRB(4, 0, 4, 8),
+            child: ClipRRect(
+              borderRadius: .circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: cs.outlineVariant.withAlpha(60),
+                valueColor: AlwaysStoppedAnimation(
+                  progress == 1.0 ? cs.secondary : cs.primary,
+                ),
               ),
             ),
-            value: task.isCompleted,
-            onChanged: task.isCompleted
-                ? null
-                : (val) {
-                    if (val == true) {
-                      onCompleteTask(task);
-                    }
-                  },
+          ),
+
+        // ── Task items ───────────────────────────────────────────
+        if (data.tasks.isEmpty)
+          Padding(
+            padding: const .symmetric(vertical: 8, horizontal: 4),
+            child: Text(
+              'No tasks yet',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontStyle: .italic,
+              ),
+            ),
+          )
+        else
+          ...data.tasks.map(
+            (task) => _TaskTile(
+              task: task,
+              cs: cs,
+              theme: theme,
+              onComplete: () => onCompleteTask(task),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TaskTile extends StatelessWidget {
+  const _TaskTile({
+    required this.task,
+    required this.cs,
+    required this.theme,
+    required this.onComplete,
+  });
+
+  final _TaskData task;
+  final ColorScheme cs;
+  final ThemeData theme;
+  final VoidCallback onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const .only(bottom: 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: .circular(12),
+        child: InkWell(
+          borderRadius: .circular(12),
+          onTap: task.isCompleted ? null : onComplete,
+          child: Container(
+            decoration: BoxDecoration(
+              color: task.isCompleted
+                  ? cs.surfaceContainerHighest.withAlpha(60)
+                  : cs.surface,
+              borderRadius: .circular(12),
+              border: .all(
+                color: task.isCompleted
+                    ? cs.outlineVariant.withAlpha(60)
+                    : cs.outlineVariant.withAlpha(120),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                // Checkbox
+                Padding(
+                  padding: const .all(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: task.isCompleted ? cs.primary : Colors.transparent,
+                      borderRadius: .circular(6),
+                      border: task.isCompleted
+                          ? null
+                          : .all(color: cs.outline, width: 1.5),
+                    ),
+                    child: task.isCompleted
+                        ? Icon(
+                            Icons.check_rounded,
+                            color: cs.onPrimary,
+                            size: 14,
+                          )
+                        : null,
+                  ),
+                ),
+                // Task name
+                Expanded(
+                  child: Text(
+                    task.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: task.isCompleted
+                          ? cs.onSurfaceVariant
+                          : cs.onSurface,
+                      decoration: task.isCompleted ? .lineThrough : .none,
+                      decorationColor: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                // Status chip for completed
+                if (task.isCompleted)
+                  Padding(
+                    padding: const .only(right: 12),
+                    child: Icon(
+                      Icons.task_alt_rounded,
+                      color: cs.secondary,
+                      size: 18,
+                    ),
+                  ),
+                if (!task.isCompleted) const SizedBox(width: 12),
+              ],
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 }

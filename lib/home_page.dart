@@ -23,7 +23,6 @@ class TextItem extends ConversationItem {
 
 class SurfaceItem extends ConversationItem {
   final String surfaceId;
-
   SurfaceItem({required this.surfaceId});
 }
 
@@ -123,11 +122,7 @@ class _MyHomePageState extends State<MyHomePage> {
         buffer.write(part.text);
       }
     }
-
-    if (buffer.isEmpty) {
-      return;
-    }
-
+    if (buffer.isEmpty) return;
     final text = buffer.toString();
 
     // Send the string to Firebase AI Logic.
@@ -160,10 +155,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _addMessage() async {
     final text = _textController.text;
-
-    if (text.trim().isEmpty) {
-      return;
-    }
+    if (text.trim().isEmpty) return;
     _textController.clear();
 
     setState(() {
@@ -187,97 +179,311 @@ class _MyHomePageState extends State<MyHomePage> {
     await _conversation.sendRequest(ChatMessage.user(text));
   }
 
+  void _toggleTheme() {
+    final current = themeModeNotifier.value;
+    if (current == ThemeMode.dark) {
+      themeModeNotifier.value = ThemeMode.light;
+    } else {
+      themeModeNotifier.value = ThemeMode.dark;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == .dark;
+
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Just Today'),
-      ),
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              AnimatedSize(
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  padding: const .all(16),
-                  alignment: .topLeft,
-                  child: Surface(
-                    surfaceContext: _controller.contextFor(
-                      taskDisplaySurfaceId,
-                    ),
-                  ),
-                ),
-              ),
-              const Divider(),
-              Expanded(
-                child: ListView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    for (final item in _items)
-                      switch (item) {
-                        TextItem() => MessageBubble(
-                          text: item.text,
-                          isUser: item.isUser,
-                        ),
-                        //* GenUI!
-                        SurfaceItem() => Surface(
-                          surfaceContext: _controller.contextFor(
-                            item.surfaceId,
-                          ),
-                        ),
-                      },
-                  ],
-                ),
-              ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: ValueListenableBuilder(
-                    valueListenable: _conversation.state,
-                    builder: (context, state, child) {
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _textController,
-                              onSubmitted: state.isWaiting
-                                  ? null
-                                  : (_) => _addMessage(),
-                              decoration: const InputDecoration(
-                                hintText: 'Enter a message',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: state.isWaiting ? null : _addMessage,
-                            child: const Text('Send'),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
+          // ── Custom Header ──────────────────────────────────────
+          _AppHeader(isDark: isDark, onToggleTheme: _toggleTheme, cs: cs),
+
+          // ── Loading bar ────────────────────────────────────────
           ValueListenableBuilder(
             valueListenable: _conversation.state,
-            builder: (context, state, child) {
-              if (state.isWaiting) {
-                return const LinearProgressIndicator();
-              }
-              return const SizedBox.shrink();
+            builder: (context, state, _) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: state.isWaiting ? 3 : 0,
+                child: state.isWaiting
+                    ? LinearProgressIndicator(
+                        backgroundColor: cs.primaryContainer,
+                        valueColor: AlwaysStoppedAnimation(cs.primary),
+                      )
+                    : const SizedBox.shrink(),
+              );
             },
+          ),
+
+          // ── Task surface panel ────────────────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeInOut,
+            child: _TaskPanel(controller: _controller, cs: cs, isDark: isDark),
+          ),
+
+          // ── Divider ───────────────────────────────────────────
+          Divider(height: 1, color: cs.outlineVariant.withAlpha(80)),
+
+          // ── Chat messages ─────────────────────────────────────
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const .symmetric(vertical: 12, horizontal: 8),
+              itemCount: _items.length,
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                return switch (item) {
+                  TextItem() => MessageBubble(
+                    text: item.text,
+                    isUser: item.isUser,
+                  ),
+                  SurfaceItem() => Padding(
+                    padding: const .symmetric(vertical: 6),
+                    child: Surface(
+                      surfaceContext: _controller.contextFor(item.surfaceId),
+                    ),
+                  ),
+                };
+              },
+            ),
+          ),
+
+          // ── Input bar ─────────────────────────────────────────
+          _InputBar(
+            controller: _textController,
+            conversation: _conversation,
+            onSend: _addMessage,
+            cs: cs,
+            isDark: isDark,
           ),
         ],
       ),
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// App Header
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AppHeader extends StatelessWidget {
+  const _AppHeader({
+    required this.isDark,
+    required this.onToggleTheme,
+    required this.cs,
+  });
+
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        color: cs.surface,
+        padding: const .fromLTRB(20, 12, 12, 12),
+        child: Row(
+          children: [
+            // Logo / icon
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [cs.primary, cs.tertiary],
+                  begin: .topLeft,
+                  end: .bottomRight,
+                ),
+                borderRadius: .circular(10),
+              ),
+              child: Icon(Icons.check_rounded, color: cs.onPrimary, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: .start,
+                mainAxisSize: .min,
+                children: [
+                  Text(
+                    'Just Today',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: cs.onSurface,
+                      fontWeight: .w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  Text(
+                    'AI Task Planner',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            // Theme toggle button
+            IconButton(
+              onPressed: onToggleTheme,
+              tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
+              style: IconButton.styleFrom(
+                backgroundColor: cs.primaryContainer.withAlpha(120),
+                foregroundColor: cs.primary,
+              ),
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) => RotationTransition(
+                  turns: anim,
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+                child: Icon(
+                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                  key: ValueKey(isDark),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TaskPanel extends StatelessWidget {
+  const _TaskPanel({
+    required this.controller,
+    required this.cs,
+    required this.isDark,
+  });
+
+  final SurfaceController controller;
+  final ColorScheme cs;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 320),
+      decoration: BoxDecoration(
+        color: isDark
+            ? cs.surfaceContainerLow
+            : cs.primaryContainer.withAlpha(60),
+      ),
+      child: SingleChildScrollView(
+        padding: const .symmetric(horizontal: 16, vertical: 8),
+        child: Surface(
+          surfaceContext: controller.contextFor(taskDisplaySurfaceId),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Input Bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InputBar extends StatelessWidget {
+  const _InputBar({
+    required this.controller,
+    required this.conversation,
+    required this.onSend,
+    required this.cs,
+    required this.isDark,
+  });
+
+  final TextEditingController controller;
+  final Conversation conversation;
+  final VoidCallback onSend;
+  final ColorScheme cs;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        color: cs.surface,
+        padding: const .fromLTRB(12, 8, 12, 12),
+        child: ValueListenableBuilder(
+          valueListenable: conversation.state,
+          builder: (context, state, _) {
+            final waiting = state.isWaiting;
+            return Row(
+              crossAxisAlignment: .end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    onSubmitted: waiting ? null : (_) => onSend(),
+                    maxLines: 4,
+                    minLines: 1,
+                    textInputAction: .send,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: cs.onSurface),
+                    decoration: InputDecoration(
+                      hintText: waiting
+                          ? 'AI is thinking…'
+                          : 'Tell me about today\'s tasks…',
+                      filled: true,
+                      fillColor: isDark
+                          ? cs.surfaceContainerHighest.withAlpha(100)
+                          : cs.surfaceContainerHighest.withAlpha(140),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Send button
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: waiting ? 0.5 : 1.0,
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: waiting ? null : onSend,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: cs.primary,
+                        foregroundColor: cs.onPrimary,
+                        padding: .zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: .circular(16),
+                        ),
+                      ),
+                      child: waiting
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: cs.onPrimary,
+                              ),
+                            )
+                          : const Icon(Icons.send_rounded, size: 22),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// System Instruction
+// ─────────────────────────────────────────────────────────────────────────────
 
 const systemInstruction =
     '''

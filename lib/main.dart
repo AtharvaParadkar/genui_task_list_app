@@ -1,9 +1,13 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:genui_task_list_app/app_theme.dart';
 import 'package:genui_task_list_app/firebase_options.dart';
 import 'package:genui_task_list_app/home_page.dart';
 
 const taskDisplaySurfaceId = 'task_display';
+
+/// Global notifier so any widget can toggle the theme.
+final themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
 
 void main() async {
   // debugPrintRebuildDirtyWidgets: true;
@@ -17,11 +21,18 @@ class GenUiTaskListApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Just today',
-      theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.cyan)),
-      debugShowCheckedModeBanner: false,
-      home: MyHomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'Just Today',
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: mode,
+          debugShowCheckedModeBanner: false,
+          home: const MyHomePage(),
+        );
+      },
     );
   }
 }
